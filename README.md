@@ -1,36 +1,28 @@
-# RevoGrid Pro remote-filter reproduction
+# RevoGrid Pro filter/source reproduction
 
 Minimal reproduction using exactly:
 
 - `@revolist/revogrid` 4.27.5
 - `@revolist/revogrid-pro` 2.5.7
-- `InfinityScrollPlugin`
 - `AdvanceFilterPlugin`
+- client-side grouping
+- `InfinityScrollPlugin` disabled
 
-The demo uses a delayed in-memory `loadData` function as a fake server. Click
-**Run scenario** to apply `contains "Smolnaya"`. Infinity Scroll intercepts the
-filter event, prevents Core local trimming, and reloads the remote source.
+The demo follows the reported hybrid setup: `beforefilterapply` starts a fake
+server request, while the advanced filter still performs local filtering. When
+the request finishes, the handler replaces `grid.source` with the complete
+server-filtered rows.
 
-During the artificial 150 ms request, unloaded rows are `{}` placeholders by
-design. The debug panel labels this as `loading`. Once the request settles, the
-two matching rows must contain all three fields and `emptySourceRows` must be
-zero.
+Click **Run scenario** to apply `contains "Smolnaya"`. The debug panel records
+the filtering and source lifecycle and reports how many source rows are empty
+objects. Click **Reset** to clear the filter and restore all 98 rows.
 
 ## Install
 
-RevoGrid Pro is distributed through the private GitHub Packages registry. Make
-sure your npm configuration can access `@revolist/revogrid-pro`, then run:
+RevoGrid Pro is distributed through the private GitHub Packages registry. Copy
+`.npmrc.example` to `.npmrc`, provide a token with package access, then run:
 
 ```bash
 pnpm install
 pnpm dev
 ```
-
-Click **Reset** to clear the advanced filter. The plugin triggers another
-remote load, restores a 98-row virtual source, and loads its first 20-row
-chunk. The other rows remain `{}` placeholders until their chunks are loaded.
-
-Client-side grouping is intentionally absent: Pro 2.5.7 disables Infinity
-Scroll when Core grouping is active because a partial remote source cannot be
-grouped locally. A grouped remote reproduction must use the separate
-server-side grouping plugin.

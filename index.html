@@ -3,16 +3,16 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>RevoGrid Pro remote-filter reproduction</title>
+    <title>RevoGrid Pro filter/source reproduction</title>
     <link rel="stylesheet" href="/style.css" />
   </head>
   <body>
     <main>
-      <h1>Infinity scroll + advanced filter</h1>
+      <h1>Advanced filter without Infinity Scroll</h1>
       <p>
-        Runs a Pro advanced <code>contains "Smolnaya"</code> filter. The
-        Infinity Scroll plugin cancels local filtering and asks the fake server
-        for the matching page.
+        Runs a Pro advanced <code>contains "Smolnaya"</code> filter, then
+        replaces <code>source</code> with an asynchronously returned server
+        result while client-side grouping is active.
       </p>
 
       <div class="actions">
@@ -22,7 +22,7 @@
 
       <revo-grid id="grid"></revo-grid>
 
-      <h2>Remote loads, lifecycle, and store snapshot</h2>
+      <h2>Server reload, lifecycle, and store snapshot</h2>
       <pre id="debug">Ready</pre>
     </main>
     <script type="module" src="/main.js"></script>

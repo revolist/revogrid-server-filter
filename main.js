@@ -1,8 +1,5 @@
 import { defineCustomElements } from '@revolist/revogrid/loader';
-import {
-  AdvanceFilterPlugin,
-  InfinityScrollPlugin,
-} from '@revolist/revogrid-pro';
+import { AdvanceFilterPlugin } from '@revolist/revogrid-pro';
 import '@revolist/revogrid-pro/dist/revogrid-pro.css';
 
 defineCustomElements();
@@ -23,7 +20,8 @@ const allRows = Array.from({ length: 98 }, (_, index) => ({
 }));
 
 const events = [];
-let loadNumber = 0;
+let requestNumber = 0;
+let lastRequestedValue;
 
 grid.columns = [
   { prop: 'id', name: 'ID', size: 70 },
@@ -31,46 +29,9 @@ grid.columns = [
   { prop: 'district', name: 'District', size: 140, filter: true },
 ];
 grid.filter = true;
-grid.plugins = [InfinityScrollPlugin, AdvanceFilterPlugin];
-grid.infinityScroll = {
-  chunkSize: 20,
-  bufferSize: 40,
-  preloadThreshold: 0.75,
-  total: allRows.length,
-  loadData: async (skip, limit, order, singleFilters, multiFilters) => {
-    const currentLoad = ++loadNumber;
-    events.push({
-      event: 'loadData:start',
-      load: currentLoad,
-      skip,
-      limit,
-      singleFilters,
-      multiFilters,
-    });
-    await renderSnapshot('loading');
-    await new Promise(resolve => window.setTimeout(resolve, 150));
-
-    const filter = singleFilters?.address;
-    const needle = String(filter?.value ?? '').toLocaleLowerCase();
-    const filtered = needle
-      ? allRows.filter(row => row.address.toLocaleLowerCase().includes(needle))
-      : allRows;
-    const data = filtered.slice(skip, skip + limit).map(row => ({ ...row }));
-
-    events.push({
-      event: 'loadData:end',
-      load: currentLoad,
-      returned: data.length,
-      total: filtered.length,
-    });
-    window.setTimeout(() => renderSnapshot('settled'));
-    return {
-      data,
-      total: filtered.length,
-      hasMore: skip + data.length < filtered.length,
-    };
-  },
-};
+grid.plugins = [AdvanceFilterPlugin];
+grid.grouping = { props: ['district'], expandedAll: true };
+grid.source = allRows.map(row => ({ ...row }));
 
 for (const eventName of [
   'beforefilterapply',
@@ -85,8 +46,33 @@ for (const eventName of [
   });
 }
 
+grid.addEventListener('beforefilterapply', event => {
+  const value = event.detail?.collection?.address?.value ?? '';
+  if (value === lastRequestedValue) return;
+  lastRequestedValue = value;
+  void reloadFromServer(value);
+});
+
+async function reloadFromServer(value) {
+  const currentRequest = ++requestNumber;
+  events.push({ event: 'server:start', request: currentRequest, value });
+  await new Promise(resolve => window.setTimeout(resolve, 150));
+  if (currentRequest !== requestNumber) return;
+
+  const needle = String(value).toLocaleLowerCase();
+  const rows = (needle
+    ? allRows.filter(row => row.address.toLocaleLowerCase().includes(needle))
+    : allRows
+  ).map(row => ({ ...row }));
+
+  events.push({ event: 'server:end', request: currentRequest, returned: rows.length });
+  grid.source = rows;
+  window.setTimeout(() => renderSnapshot('server source settled'));
+}
+
 runButton.addEventListener('click', () => {
   events.length = 0;
+  lastRequestedValue = undefined;
   grid.dispatchEvent(new CustomEvent('filter', {
     detail: {
       address: [
@@ -102,12 +88,15 @@ runButton.addEventListener('click', () => {
 });
 
 resetButton.addEventListener('click', async () => {
+  requestNumber += 1;
   events.length = 0;
+  lastRequestedValue = '';
   const filterPlugin = (await grid.getPlugins()).find(plugin =>
     typeof plugin.clearFiltering === 'function'
   );
   await filterPlugin?.clearFiltering();
-  window.setTimeout(() => renderSnapshot('reset settled'), 200);
+  grid.source = allRows.map(row => ({ ...row }));
+  window.setTimeout(() => renderSnapshot('reset settled'));
 });
 
 async function renderSnapshot(phase = 'ready') {
@@ -117,6 +106,7 @@ async function renderSnapshot(phase = 'ready') {
   const store = await grid.getSourceStore();
 
   debug.textContent = JSON.stringify({
+    mode: 'AdvanceFilterPlugin; InfinityScrollPlugin disabled',
     phase,
     sourceRows: source.length,
     visibleRows: visible.length,
