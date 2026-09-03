@@ -17,6 +17,7 @@ const initialRows = [
 const serverRows = initialRows.filter(row => row.address.includes('Smolnaya'));
 const events = [];
 let installingServerRows = false;
+let resetting = false;
 let requestId = 0;
 
 grid.columns = [
@@ -41,7 +42,7 @@ for (const eventName of [
 grid.addEventListener('beforefilterapply', () => {
   // Do not cancel local filtering: this intentionally reproduces the user's
   // hybrid configuration (server data plus the local filter plugin).
-  if (installingServerRows) return;
+  if (installingServerRows || resetting) return;
 
   const currentRequest = ++requestId;
   window.setTimeout(() => {
@@ -73,11 +74,16 @@ runButton.addEventListener('click', () => {
 resetButton.addEventListener('click', async () => {
   requestId += 1;
   events.length = 0;
-  const filterPlugin = (await grid.getPlugins()).find(plugin =>
-    typeof plugin.clearFiltering === 'function'
-  );
-  await filterPlugin?.clearFiltering();
-  grid.source = initialRows.map(row => ({ ...row }));
+  resetting = true;
+  try {
+    const filterPlugin = (await grid.getPlugins()).find(plugin =>
+      typeof plugin.clearFiltering === 'function'
+    );
+    await filterPlugin?.clearFiltering();
+    grid.source = initialRows.map(row => ({ ...row }));
+  } finally {
+    resetting = false;
+  }
   await renderSnapshot();
 });
 
