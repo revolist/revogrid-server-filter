@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RevoGrid filter/source reproduction</title>
+    <link rel="stylesheet" href="/style.css" />
+  </head>
+  <body>
+    <main>
+      <h1>Filter + source replacement</h1>
+      <p>
+        Runs a local <code>contains "Smolnaya"</code> filter, then replaces
+        <code>source</code> with an asynchronously returned server result.
+      </p>
+
+      <div class="actions">
+        <button id="run">Run scenario</button>
+        <button id="reset" class="secondary">Reset</button>
+      </div>
+
+      <revo-grid id="grid"></revo-grid>
+
+      <h2>Lifecycle and store snapshot</h2>
+      <pre id="debug">Ready</pre>
+    </main>
+    <script type="module" src="/main.js"></script>
+  </body>
+</html>
