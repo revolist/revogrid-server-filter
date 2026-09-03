@@ -1,4 +1,9 @@
 import { defineCustomElements } from '@revolist/revogrid/loader';
+import {
+  AdvanceFilterPlugin,
+  InfinityScrollPlugin,
+} from '@revolist/revogrid-pro';
+import '@revolist/revogrid-pro/dist/revogrid-pro.css';
 
 defineCustomElements();
 
@@ -7,27 +12,65 @@ const debug = document.querySelector('#debug');
 const runButton = document.querySelector('#run');
 const resetButton = document.querySelector('#reset');
 
-const initialRows = [
-  { id: 1, address: 'Nevsky Avenue', district: 'Central' },
-  { id: 2, address: 'Smolnaya Street', district: 'Central' },
-  { id: 3, address: 'Liteyny Avenue', district: 'Central' },
-  { id: 4, address: 'Smolnaya Embankment', district: 'Central' },
-];
+const allRows = Array.from({ length: 98 }, (_, index) => ({
+  id: index + 1,
+  address: index === 37
+    ? 'Smolnaya Street'
+    : index === 72
+      ? 'Smolnaya Embankment'
+      : `Example Avenue ${index + 1}`,
+  district: index % 2 ? 'North' : 'Central',
+}));
 
-const serverRows = initialRows.filter(row => row.address.includes('Smolnaya'));
 const events = [];
-let installingServerRows = false;
-let resetting = false;
-let requestId = 0;
+let loadNumber = 0;
 
 grid.columns = [
   { prop: 'id', name: 'ID', size: 70 },
   { prop: 'address', name: 'Address', size: 260, filter: true },
-  { prop: 'district', name: 'District', size: 140 },
+  { prop: 'district', name: 'District', size: 140, filter: true },
 ];
 grid.filter = true;
-grid.grouping = { props: ['district'], expandedAll: true };
-grid.source = initialRows.map(row => ({ ...row }));
+grid.plugins = [InfinityScrollPlugin, AdvanceFilterPlugin];
+grid.infinityScroll = {
+  chunkSize: 20,
+  bufferSize: 40,
+  preloadThreshold: 0.75,
+  total: allRows.length,
+  loadData: async (skip, limit, order, singleFilters, multiFilters) => {
+    const currentLoad = ++loadNumber;
+    events.push({
+      event: 'loadData:start',
+      load: currentLoad,
+      skip,
+      limit,
+      singleFilters,
+      multiFilters,
+    });
+    await renderSnapshot('loading');
+    await new Promise(resolve => window.setTimeout(resolve, 150));
+
+    const filter = singleFilters?.address;
+    const needle = String(filter?.value ?? '').toLocaleLowerCase();
+    const filtered = needle
+      ? allRows.filter(row => row.address.toLocaleLowerCase().includes(needle))
+      : allRows;
+    const data = filtered.slice(skip, skip + limit).map(row => ({ ...row }));
+
+    events.push({
+      event: 'loadData:end',
+      load: currentLoad,
+      returned: data.length,
+      total: filtered.length,
+    });
+    window.setTimeout(() => renderSnapshot('settled'));
+    return {
+      data,
+      total: filtered.length,
+      hasMore: skip + data.length < filtered.length,
+    };
+  },
+};
 
 for (const eventName of [
   'beforefilterapply',
@@ -36,24 +79,11 @@ for (const eventName of [
   'beforesourceset',
   'aftersourceset',
 ]) {
-  grid.addEventListener(eventName, () => events.push(eventName));
+  grid.addEventListener(eventName, event => {
+    events.push({ event: eventName, defaultPrevented: event.defaultPrevented });
+    window.setTimeout(() => renderSnapshot(eventName));
+  });
 }
-
-grid.addEventListener('beforefilterapply', () => {
-  // Do not cancel local filtering: this intentionally reproduces the user's
-  // hybrid configuration (server data plus the local filter plugin).
-  if (installingServerRows || resetting) return;
-
-  const currentRequest = ++requestId;
-  window.setTimeout(() => {
-    if (currentRequest !== requestId) return;
-
-    installingServerRows = true;
-    grid.source = serverRows.map(row => ({ ...row }));
-    installingServerRows = false;
-    window.setTimeout(renderSnapshot);
-  }, 100);
-});
 
 runButton.addEventListener('click', () => {
   events.length = 0;
@@ -72,32 +102,28 @@ runButton.addEventListener('click', () => {
 });
 
 resetButton.addEventListener('click', async () => {
-  requestId += 1;
   events.length = 0;
-  resetting = true;
-  try {
-    const filterPlugin = (await grid.getPlugins()).find(plugin =>
-      typeof plugin.clearFiltering === 'function'
-    );
-    await filterPlugin?.clearFiltering();
-    grid.source = initialRows.map(row => ({ ...row }));
-  } finally {
-    resetting = false;
-  }
-  await renderSnapshot();
+  const filterPlugin = (await grid.getPlugins()).find(plugin =>
+    typeof plugin.clearFiltering === 'function'
+  );
+  await filterPlugin?.clearFiltering();
+  window.setTimeout(() => renderSnapshot('reset settled'), 200);
 });
 
-async function renderSnapshot() {
+async function renderSnapshot(phase = 'ready') {
+  if (!grid.getSource) return;
   const source = await grid.getSource();
   const visible = await grid.getVisibleSource();
   const store = await grid.getSourceStore();
 
   debug.textContent = JSON.stringify({
+    phase,
+    sourceRows: source.length,
+    visibleRows: visible.length,
+    emptySourceRows: source.filter(row => !Object.keys(row ?? {}).length).length,
+    sourcePreview: source.slice(0, 5),
+    visiblePreview: visible.slice(0, 5),
     events,
-    source,
-    visible,
-    sourceKeyCounts: source.map(row => Object.keys(row ?? {}).length),
-    visibleKeyCounts: visible.map(row => Object.keys(row ?? {}).length),
     items: store.get('items'),
     proxyItems: store.get('proxyItems'),
     trimmed: store.get('trimmed'),
